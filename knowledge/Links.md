@@ -6,3 +6,7 @@ https://www.gradually.ai/claude-code-anleitung/
 
 # Agenten
 https://www.ibm.com/de-de/think/ai-agents#605511093
+
+
+# n8n
+https://n8n.io/workflows/
