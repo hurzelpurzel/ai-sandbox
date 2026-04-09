@@ -1,0 +1,42 @@
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ if .Values.persistence.name }}{{ .Values.persistence.name }}{{ else }}{{ include "ollama.fullname" . }}-models{{ end }}
+  labels:
+    {{- include "ollama.labels" . | nindent 4 }}
+  annotations:
+    # CRITICAL: Prevent ArgoCD/Helm/Flux from deleting PVC with model data
+    # This preserves the PVC and its data when the Helm release is deleted
+    "helm.sh/resource-policy": "keep"
+    "argocd.argoproj.io/sync-options": "Prune=false,Delete=false"
+    # Skip health check for PVC - Pending state is expected with WaitForFirstConsumer
+    # The PVC will remain Pending until a pod is scheduled, which is normal behavior
+    "argocd.argoproj.io/health-check-skip": "true"
+    "resources.fluxcd.io/ignore": "true"
+    # Note: With Retain reclaim policy (e.g., local-path with Retain), PV still won't auto-reclaim
+    # even if PVC is deleted - PV must be manually deleted to reclaim storage
+    # For true auto-reclamation, use a storage class with Delete policy (e.g., standard-rwo)
+    {{- with .Values.persistence.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size | quote }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- end }}
+  # IMPORTANT: For storage classes with strict locality requirements, ensure your StorageClass has:
+  # volumeBindingMode: WaitForFirstConsumer
+  # This ensures the PVC waits for a pod to be scheduled before binding
+  # Kubernetes will automatically handle this if the StorageClass is configured correctly
+  # The PVC will be created but will remain in Pending state until a pod is scheduled
+  # Note: PVC expansion requires:
+  # 1. Storage class with allowVolumeExpansion: true (e.g., local-path, gp3, standard)
+  # 2. Update persistence.size in values.yaml
+  # 3. Run: helm upgrade <release> <chart> -f values.yaml
+  # Kubernetes will automatically expand the volume (no data loss, online expansion supported)
+{{- end }}

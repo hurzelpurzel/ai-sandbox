@@ -1,0 +1,61 @@
+1. Get the application URL by running these commands:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "ollama.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "ollama.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "ollama.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.port }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "ollama.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+{{- end }}
+
+2. OLLAMA API Documentation:
+   The OLLAMA server provides a REST API compatible with OpenAI's API.
+   You can access the API documentation at: http://your-service-url/docs
+
+3. Example usage:
+   curl -X POST "http://your-service-url/v1/completions" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "model": "{{ .Values.ollama.model }}",
+       "prompt": "Hello, world!",
+       "max_tokens": 50
+     }'
+
+4. GPU Requirements:
+   This chart requires GPU nodes with NVIDIA drivers and CUDA support.
+   Make sure your cluster has GPU-enabled nodes and the NVIDIA device plugin installed.
+
+5. Security Configuration:
+   This chart defaults to a hardened security context with readOnlyRootFilesystem: true.
+   This is the recommended and expected deployment mode for production use.
+
+   NetworkPolicy status: {{ if .Values.networkPolicy.enabled }}ENABLED{{ else }}DISABLED{{ end }}
+   {{- if .Values.networkPolicy.enabled }}
+   Ingress restrictions: {{ if .Values.networkPolicy.ingress.from }}configured{{ else }}all namespaces allowed (consider restricting via networkPolicy.ingress.from){{ end }}
+   {{- end }}
+
+6. Persistent Volume Claim (PVC) Requirements:
+   {{- if .Values.persistence.enabled }}
+   A PVC is configured and will be used for all model files and temporary working directories.
+   PVC Name: {{ if .Values.persistence.name }}{{ .Values.persistence.name }}{{ else }}{{ include "ollama.fullname" . }}-pvc{{ end }}
+   Mount Path: /models
+   - Model storage: /models (via HF_HOME and TRANSFORMERS_CACHE)
+   - Temporary directory: /models/tmp (via TMPDIR)
+   {{- else }}
+   WARNING: Persistence is disabled, but readOnlyRootFilesystem is enabled by default.
+   The deployment will FAIL because PyTorch and transformers require a writable temp directory.
+   You MUST enable persistence.enabled: true and provide a PVC for the deployment to work.
+   {{- end }}

@@ -1,0 +1,41 @@
+Ollama Helm Chart
+
+This product includes the Helm chart "ollama" originally developed by Arktec Quant.
+
+Source: https://charts.arktecquant.com
+Copyright © 2025 Arktec Quant. All rights reserved.
+
+---
+
+Ollama Project Attribution
+
+This Helm chart uses the Ollama project. The chart uses a custom-built Ollama image
+(`ghcr.io/arktec-quant/ollama:v0.18.2-cuda-12.8`) that is built from scratch, not derived from the
+official `ollama/ollama` Docker image.
+
+Ollama is an AI Inference Engine for running large language models (LLMs) locally, developed and maintained by the Ollama project team.
+
+Ollama Project:
+- GitHub: https://github.com/ollama/ollama
+- Documentation: https://ollama.ai/
+- Official Docker Images: https://hub.docker.com/r/ollama/ollama
+
+The Ollama inference engine and its codebase are licensed under MIT by the Ollama
+project contributors. This license applies to Ollama itself, not to this Helm chart or
+the custom-built image.
+
+---
+
+License Requirements
+
+This Helm chart (ollama) and the custom-built Ollama image (ghcr.io/arktec-quant/ollama)
+are licensed under Apache License 2.0 by Arktec Quant.
+
+If you redistribute this Helm chart, you must:
+1. Include this NOTICE file
+2. Preserve all copyright notices
+3. Include attribution to both Arktec Quant (for the chart) and the Ollama project (for Ollama)
+
+You may use, modify, and distribute this chart freely, including for commercial purposes,
+as long as you comply with the Apache 2.0 license terms and preserve this attribution.
+

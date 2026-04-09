@@ -1,0 +1,32 @@
+{{- if .Values.limitRange.enabled }}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "ollama.fullname" . }}-limits
+  labels:
+    {{- include "ollama.labels" . | nindent 4 }}
+spec:
+  limits:
+    - default:
+        {{- if .Values.limitRange.default.cpu }}
+        cpu: {{ .Values.limitRange.default.cpu }}
+        {{- end }}
+        {{- if .Values.limitRange.default.memory }}
+        memory: {{ .Values.limitRange.default.memory }}
+        {{- end }}
+        {{- if .Values.limitRange.default.gpu }}
+        "nvidia.com/gpu": {{ .Values.limitRange.default.gpu | quote }}
+        {{- end }}
+      defaultRequest:
+        {{- if .Values.limitRange.defaultRequest.cpu }}
+        cpu: {{ .Values.limitRange.defaultRequest.cpu }}
+        {{- end }}
+        {{- if .Values.limitRange.defaultRequest.memory }}
+        memory: {{ .Values.limitRange.defaultRequest.memory }}
+        {{- end }}
+        {{- if .Values.limitRange.defaultRequest.gpu }}
+        "nvidia.com/gpu": {{ .Values.limitRange.defaultRequest.gpu | quote }}
+        {{- end }}
+      type: Container
+{{- end }}
+

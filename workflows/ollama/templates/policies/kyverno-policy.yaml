@@ -1,0 +1,10 @@
+{{- if .Values.policies.kyverno.enabled }}
+{{- include "ollama.kyverno.privilegedEscalation" . }}
+---
+{{- include "ollama.kyverno.hostPath" . }}
+---
+{{- include "ollama.kyverno.nonRoot" . }}
+---
+{{- include "ollama.kyverno.readOnlyRootfs" . }}
+{{- end }}
+

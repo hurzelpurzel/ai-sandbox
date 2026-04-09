@@ -1,0 +1,123 @@
+{{- if .Values.warmup.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ollama.fullname" . }}-warmup
+  labels:
+    {{- include "ollama.labels" . | nindent 4 }}
+    app.kubernetes.io/component: warmup
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.warmup.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.warmup.activeDeadlineSeconds | default 300 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ollama.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: warmup
+    spec:
+      serviceAccountName: {{ include "ollama.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: warmup
+        image: {{ .Values.warmup.image.repository }}:{{ .Values.warmup.image.tag }}
+        imagePullPolicy: {{ .Values.warmup.image.pullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+            add: []
+          readOnlyRootFilesystem: true
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          DEPLOYMENT_NAME="{{ include "ollama.fullname" . }}"
+          SERVICE_PORT="{{ .Values.service.port }}"
+          TEST_TEXT="{{ .Values.warmup.testText }}"
+          NAMESPACE="{{ .Release.Namespace }}"
+          APP_NAME="{{ include "ollama.name" . }}"
+          RELEASE_NAME="{{ .Release.Name }}"
+          DEPLOYMENT_TIMEOUT="{{ .Values.warmup.deploymentReadyTimeout }}"
+          HEALTH_TIMEOUT="{{ .Values.warmup.healthCheckTimeout }}"
+          {{- if and .Values.ollama.apiKeys (gt (len .Values.ollama.apiKeys) 0) }}
+          API_KEY="{{ index .Values.ollama.apiKeys 0 }}"
+          {{- else }}
+          API_KEY=""
+          {{- end }}
+          
+          # Discover service name dynamically using Kubernetes API (same as pre-hook)
+          KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || echo "")
+          KUBE_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          KUBE_API="https://kubernetes.default.svc/api/v1/namespaces/${NAMESPACE}/services"
+          
+          echo "🔍 Discovering OLLAMA service for warmup request..."
+          SERVICE_NAME=""
+          if [ -n "${KUBE_TOKEN}" ] && [ -f "${KUBE_CA}" ]; then
+            SERVICE_LIST=$(curl -sf --cacert "${KUBE_CA}" \
+              -H "Authorization: Bearer ${KUBE_TOKEN}" \
+              "${KUBE_API}?labelSelector=app.kubernetes.io/name%3D${APP_NAME},app.kubernetes.io/instance%3D${RELEASE_NAME}" 2>&1)
+            
+            if [ $? -eq 0 ] && [ -n "${SERVICE_LIST}" ]; then
+              SERVICE_NAME=$(echo "${SERVICE_LIST}" | grep -o '"name":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [ -n "${SERVICE_NAME}" ]; then
+                echo "✅ Found service: ${SERVICE_NAME}"
+              fi
+            fi
+          fi
+          
+          # Fallback: Try the template-generated name
+          if [ -z "${SERVICE_NAME}" ]; then
+            SERVICE_NAME="${DEPLOYMENT_NAME}"
+            echo "⚠️  Could not discover service via API, using fallback name: ${SERVICE_NAME}"
+          fi
+          
+          # Pre-hook already verified deployment is ready, but do a quick sanity check
+          echo "Pre-hook confirmed pod is healthy, proceeding with warmup request..."
+          echo "Service: ${SERVICE_NAME}, Port: ${SERVICE_PORT}, Namespace: ${NAMESPACE}"
+          
+          echo "Sending warmup request with text: ${TEST_TEXT}"
+          {{- if and .Values.ollama.apiKeys (gt (len .Values.ollama.apiKeys) 0) }}
+          RESPONSE=$(curl -sf --max-time 60 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${API_KEY}" \
+            -d "{\"model\":\"{{ if .Values.ollama.multiModel }}{{ if and .Values.ollama.models (gt (len .Values.ollama.models) 0) }}{{ (index .Values.ollama.models 0).name }}{{ else }}{{ .Values.ollama.model }}{{ end }}{{ else }}{{ .Values.ollama.model }}{{ end }}\",\"messages\":[{\"role\":\"user\",\"content\":\"${TEST_TEXT}\"}],\"max_tokens\":10}" \
+            "http://${SERVICE_NAME}:${SERVICE_PORT}/v1/chat/completions" 2>&1)
+          {{- else }}
+          RESPONSE=$(curl -sf --max-time 60 \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"{{ if .Values.ollama.multiModel }}{{ if and .Values.ollama.models (gt (len .Values.ollama.models) 0) }}{{ (index .Values.ollama.models 0).name }}{{ else }}{{ .Values.ollama.model }}{{ end }}{{ else }}{{ .Values.ollama.model }}{{ end }}\",\"messages\":[{\"role\":\"user\",\"content\":\"${TEST_TEXT}\"}],\"max_tokens\":10}" \
+            "http://${SERVICE_NAME}:${SERVICE_PORT}/v1/chat/completions" 2>&1)
+          {{- end }}
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Warmup request successful"
+            echo "Response: ${RESPONSE}"
+            exit 0
+          else
+            echo "❌ Warmup request failed"
+            echo "Error: ${RESPONSE}"
+            exit 1
+          fi
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+{{- end }}
+

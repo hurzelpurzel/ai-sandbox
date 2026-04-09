@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ollama.fullname" . }}
+  labels:
+    {{- include "ollama.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  {{- include "ollama.strategy" . | nindent 2 }}
+  selector:
+    matchLabels:
+      {{- include "ollama.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- include "ollama.podMetadata" . | nindent 6 }}
+    spec:
+      {{- include "ollama.podSpec" . | nindent 6 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- include "ollama.securityContext" . | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default "latest" }}{{ if .Values.image.digest }}@{{ .Values.image.digest }}{{ end }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            {{- include "ollama.ports" . | nindent 12 }}
+          env:
+            {{- include "ollama.env" . | nindent 12 }}
+          args:
+            {{- include "ollama.args" . | nindent 12 }}
+          {{- include "ollama.probes" . | nindent 10 }}
+          resources:
+            {{- include "ollama.resources" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ollama.volumeMounts" . | nindent 12 }}
+          {{- if .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml .Values.lifecycle | nindent 12 }}
+          {{- end }}
+      volumes:
+        {{- include "ollama.volumes" . | nindent 8 }}
+      {{- include "ollama.scheduling" . | nindent 6 }}
+      {{- include "ollama.affinity" . | nindent 6 }}

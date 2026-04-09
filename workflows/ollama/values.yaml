@@ -1,0 +1,781 @@
+# Default values for ollama.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/arktec-quant/ollama
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  # Pinned to v0.18.2-cuda-12.8 (CUDA 12.8) for chart version 1.0.8
+  tag: "v0.18.2-cuda-12.8"
+  # Optional: Image digest for pinning (protects against registry image replacement attacks)
+  # Format: "sha256:xxxxx" (e.g., "sha256:d8d39b59e909d2378ac4feeb191f7e7b6f1342477dc66b7c47cec89e9985ad8a")
+  digest: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+  # Disable service account token auto-mount (Kubernetes best practice)
+  # Since Ollama does not need in-cluster API access, disabling the token removes a common attack path
+  automountServiceAccountToken: false
+  # ⚠️ SECURITY: For pods that access Ollama, ensure they:
+  # - Do not share service accounts (each app should have its own)
+  # - Have least-privileged RBAC (minimum permissions only)
+  # - Cannot spawn arbitrary pods (prevent privilege escalation)
+  # Disable for in-cluster API access; when true, use least-privilege RBAC
+
+podAnnotations:
+  # AppArmor profile (optional but strong security)
+  # Requires AppArmor support in your Kubernetes cluster (e.g., K3s with AppArmor enabled)
+  # Set to empty string {} to disable AppArmor
+  container.apparmor.security.beta.kubernetes.io/ollama: runtime/default
+
+# -- Map of labels to add to the pods
+podLabels: {}
+
+# Pod Security Standards (PSS) enforcement
+# Optional: Configure PSS enforcement level (baseline, restricted)
+# Default: restricted (already enforced via labels)
+podSecurityStandards:
+  enforce: "restricted"  # Options: baseline, restricted
+  audit: "restricted"
+  warn: "restricted"
+  # Disallow host-level access
+  disallowHostNetwork: true
+  disallowHostPath: true
+
+podSecurityContext:
+  fsGroup: 1001  # Match runAsGroup for ollama user (UID 1001, actual UID in ollama image)
+  # Avoid unnecessary chown operations on large PVCs at container startup
+  fsGroupChangePolicy: "OnRootMismatch"
+
+# Container security context with hardened defaults
+# Ollama is designed to run securely with a read-only root filesystem.
+# This is the recommended and expected deployment mode for production.
+# IMPORTANT: When readOnlyRootFilesystem is true, a PersistentVolumeClaim (PVC) is REQUIRED.
+# When persistence.enabled=true: PVC mounted at /models (persistent)
+# When persistence.enabled=false: emptyDir mounted at /models (ephemeral, data lost on pod restart)
+# The /models directory is used for:
+#   - Model storage (OLLAMA_MODELS)
+#   - Cache directories (/models/.cache/torchinductor, /models/.cache/ollama)
+#   - Writable temporary directory (/models/tmp via TMPDIR, TEMP, TMP)
+#   - SSH keys directory (/models/.ssh mounted to /home/ollama/.ssh)
+#   - Ollama home directory (/models/.ollama mounted to /home/ollama/.ollama for SSH keys, config, etc.)
+# Deployments without a PVC will fail because Ollama requires a writable directory for models.
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+    # Explicitly declare empty add list to avoid implicit defaults on some distros
+    add: []
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1001  # Ollama image actual user (UID 1001, as shown in diagnostics)
+  runAsGroup: 1001  # Match ollama user GID for proper directory permissions
+  allowPrivilegeEscalation: false
+  # seccompProfile provides free security from the container runtime (containerd)
+  # Zero compatibility issues, should be default on all serious charts
+  seccompProfile:
+    type: RuntimeDefault
+
+service:
+  # ⚠️ SECURITY: Use ClusterIP (default) to prevent external exposure
+  # Do NOT use LoadBalancer or NodePort unless absolutely required and behind authentication
+  # Prefer ClusterIP; avoid LoadBalancer/NodePort unless required (exposes externally)
+  type: ClusterIP  # Options: ClusterIP, NodePort, LoadBalancer
+  port: 11434  # Ollama default port
+  targetPort: 11434
+  # nodePort: Only used when type is NodePort
+  # If not specified, Kubernetes will assign a random port (30000-32767)
+  # nodePort: 30800
+  # loadBalancerIP: Only used when type is LoadBalancer
+  # loadBalancerIP: ""
+  # IP Families for the service (IPv4, IPv6, or both)
+  ipFamilies: []
+  # ipFamilies:
+  #   - IPv4
+  #   - IPv6
+  # IP Family Policy for the service
+  ipFamilyPolicy: ""  # Options: "", "SingleStack", "PreferDualStack", "RequireDualStack"
+
+ingress:
+  # If exposing externally, use an authentication proxy (OAuth2, API Gateway, etc.)
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: ollama.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: ollama-tls
+  #    hosts:
+  #      - ollama.local
+
+resources:
+  # GPU resource type - can be "nvidia.com/gpu" (default) or "gpu"
+  # Set to "gpu" for generic GPU resources, or "nvidia.com/gpu" for NVIDIA-specific
+  gpuResourceType: "nvidia.com/gpu"  # Options: "nvidia.com/gpu" or "gpu"
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  limits:
+    cpu: 2000m
+    memory: 16Gi  # Increased to support modern LLMs (Phi-4, Qwen, etc.) which require 10-12GB+ GPU memory
+    # GPU resource limit - supports both "gpu" and "nvidia.com/gpu" keys
+    # Option 1: Use "gpu" key - will be mapped to gpuResourceType (default: "nvidia.com/gpu")
+    gpu: ""  # Example: "0" for no GPU, "1" for one GPU, "2" for two GPUs
+    # Option 2: Use "nvidia.com/gpu" key directly - will be used as-is (not remapped)
+    # nvidia.com/gpu: ""  # Example: "0" for no GPU, "1" for one GPU, "2" for two GPUs
+    # Ephemeral storage limit (for container images, logs, and temp files)
+    # PVC handles actual data storage. Keep limit reasonable to prevent log bloat.
+    ephemeral-storage: 10Gi
+  requests:
+    cpu: 200m
+    memory: 4Gi  # Increased to support modern LLMs - ensures sufficient memory for model loading
+    # GPU resource request - supports both "gpu" and "nvidia.com/gpu" keys
+    # Option 1: Use "gpu" key - will be mapped to gpuResourceType (default: "nvidia.com/gpu")
+    gpu: ""  # Example: "0" for no GPU, "1" for one GPU, "2" for two GPUs
+    # Option 2: Use "nvidia.com/gpu" key directly - will be used as-is (not remapped)
+    # nvidia.com/gpu: ""  # Example: "0" for no GPU, "1" for one GPU, "2" for two GPUs
+    # Ephemeral storage request (for container images, logs, and temp files)
+    # PVC handles actual data storage. Ephemeral storage is separate (images/logs on node).
+    ephemeral-storage: 1Gi
+
+# Deployment strategy
+# When persistence is enabled with ReadWriteOnce access mode, the default strategy is "Recreate"
+# to ensure only one pod mounts the PVC at a time. You can override this if needed.
+strategy:
+  type: ""  # Options: "", "Recreate", "RollingUpdate". Empty string uses default (Recreate when persistence enabled, RollingUpdate otherwise)
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+# Runtime class name for container runtime
+# IMPORTANT: For GPU workloads, set to "nvidia" (or your cluster's GPU runtime class name)
+# to ensure the pod has access to CUDA libraries (libcuda.so, cublas, etc.).
+# Without the correct runtime class, GPU workloads will fail with library errors.
+# For CPU-only deployments, leave empty or comment out.
+# Common values: "nvidia" (NVIDIA Container Runtime), "kata" (Kata Containers), "" (default runtime)
+runtimeClassName: "nvidia"
+
+# GPU tolerations
+tolerations:
+  - key: gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+affinity: {}
+
+# Pod anti-affinity (soft) - prevents multiple Ollama pods landing on the same node
+# This prevents pods from fighting over GPU memory and provides safer GPU scheduling
+podAntiAffinity:
+  enabled: true
+
+# Priority class name - prevents GPU workloads from being preempted by random pods
+# Optional: Set to "system-cluster-critical" or another priority class name
+priorityClassName: ""
+
+# Topology spread constraints - avoids multi-pod scheduling on same GPU node
+topologySpreadConstraints:
+  enabled: false
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: DoNotSchedule
+
+# -- Wait for a grace period before terminating pods (seconds)
+# Useful for graceful shutdown of long-running inference requests
+terminationGracePeriodSeconds: 120
+
+# -- Use the host's IPC namespace (default: false for security)
+# Only enable if required for specific use cases
+hostIPC: false
+
+# -- Use the host's PID namespace (default: false for security)
+# Only enable if required for specific use cases
+hostPID: false
+
+# -- Use the host's network namespace (default: false for security)
+# Controlled by podSecurityStandards.disallowHostNetwork, but can be explicitly overridden here
+# hostNetwork: false  # Explicit override (if needed, uncomment and set)
+
+# Health check configurability
+# Ollama uses /api/tags endpoint for health checks
+healthChecks:
+  startup:
+    path: /api/tags
+    initialDelaySeconds: 30  # Wait 30s before first check
+    periodSeconds: 30  # Check every 30 seconds
+    timeoutSeconds: 5  # 5 second timeout per check
+    failureThreshold: 120  # 120 attempts * 30s = 60 minutes (3600s) max startup time
+    # Startup probe prevents liveness probe from killing container during startup
+    # Once startup probe succeeds, liveness probe takes over
+    # This gives large models plenty of time to download and load
+  liveness:
+    path: /api/tags
+    initialDelaySeconds: 600  # Wait 10 minutes before liveness checks start
+    periodSeconds: 30  # Check every 30 seconds (less frequent)
+    timeoutSeconds: 5  # 5 second timeout per check
+    failureThreshold: 10  # Allow 10 failures before restart
+  readiness:
+    path: /api/tags
+    initialDelaySeconds: 5
+    periodSeconds: 15
+    timeoutSeconds: 2
+    failureThreshold: 6
+
+# API request authentication middleware (for wrapper-based incoming request auth)
+# NOTE: This block is NOT required for Ollama Cloud outbound authentication.
+# For Ollama Cloud, use ollama.cloud.apiKeySecret / ollama.cloud.apiKey or ollama.env.
+# PREFERRED: Use valueFromSecret (RECOMMENDED for production)
+# ALTERNATIVE: Use value for direct value (NOT RECOMMENDED for production)
+auth:
+  enabled: false
+  keys: []
+    # Example with secret (RECOMMENDED):
+    # - name: OLLAMA_API_KEY
+    #   valueFromSecret: "my-secret:api-key"  # Format: secret-name:key-name
+    # Example with direct value (NOT RECOMMENDED for production):
+    # - name: OLLAMA_API_KEY
+    #   value: "your-api-key-here"  # Direct value
+    # Example with environment variable:
+    # - name: OLLAMA_API_KEY
+    #   valueFromEnv: "EXISTING_ENV_VAR"  # Reference existing environment variable
+
+# RBAC configuration
+rbac:
+  create: true
+  # Minimal RBAC - only what Ollama needs
+  rules:
+    - apiGroups: [""]
+      resources: ["services"]
+      verbs: ["get", "list"]
+    - apiGroups: [""]
+      resources: ["pods"]
+      verbs: ["get", "list"]
+
+# ResourceQuota - enforce GPU consumption per namespace
+resourceQuota:
+  enabled: false
+  requests:
+    gpu: ""  # nvidia.com/gpu
+    cpu: ""
+    memory: ""
+  limits:
+    gpu: ""  # nvidia.com/gpu
+    cpu: ""
+    memory: ""
+
+# LimitRange - default resource limits
+limitRange:
+  enabled: false
+  default:
+    cpu: ""
+    memory: ""
+    gpu: ""  # nvidia.com/gpu
+  defaultRequest:
+    cpu: ""
+    memory: ""
+    gpu: ""  # nvidia.com/gpu
+
+# Policy-as-Code (OPA Gatekeeper / Kyverno) samples
+# Optional: Provide as CRDs under templates/policies/
+policies:
+  kyverno:
+    enabled: false
+  opa:
+    enabled: false
+
+# Ollama specific configuration
+# All configuration is done via environment variables (see ollama serve --help)
+ollama:
+  # Server port (default: 11434)
+  # OLLAMA_HOST is automatically set to 0.0.0.0:<port> for Kubernetes
+  port: 11434
+  
+  # OLLAMA_DEBUG - Show additional debug information
+  # Note: Setting this to "1" also enables GIN framework debug mode
+  # You'll see "[GIN-debug] [WARNING] Running in "debug" mode" in logs - this is expected
+  debug: ""  # Set to "1" to enable, leave empty to disable
+  
+  # OLLAMA_CONTEXT_LENGTH - Override default context window size (e.g. 4096). Leave empty ("") to omit the variable.
+  # For Ollama no-limit / default-disable semantics, use string "0" (values.schema.json requires a string, not a bare YAML number).
+  contextLength: ""  # Examples: "4096", "32768", "131072", "0"
+  
+  # GIN_MODE - GIN framework mode (debug or release)
+  # Controls the verbosity of GIN framework logs used by Ollama
+  # For production, it is recommended to set this to "release" to reduce log verbosity
+  # Default is "debug" which shows detailed GIN framework logs including route registration
+  # Options: "debug" (default, verbose logs) or "release" (production, minimal logs)
+  ginMode: "release"  # Set to "release" for production deployments
+  
+  # OLLAMA_HOST - IP Address for the ollama server (default: 127.0.0.1:11434)
+  # Leave empty to use default (0.0.0.0:11434 for Kubernetes)
+  host: ""  # Format: "0.0.0.0:11434" or leave empty for auto
+
+  # Ollama Cloud configuration
+  # Cloud model support requires outbound HTTPS access to ollama.com.
+  # To force local-only mode, set disable=true (renders OLLAMA_NO_CLOUD=1).
+  cloud:
+    disable: false
+    # OLLAMA_API_KEY for direct cloud API auth (optional).
+    # Prefer apiKeySecret in production.
+    apiKey: ""
+    apiKeySecret:
+      name: ""
+      key: "api-key"
+  
+  # OLLAMA_KEEP_ALIVE - The duration that models stay loaded in memory (default: "5m")
+  keepAlive: "5m"  # Examples: "5m", "10m", "1h"
+  
+  # OLLAMA_MAX_LOADED_MODELS - Maximum number of loaded models per GPU
+  maxLoadedModels: null  # Integer, leave null to use default
+  
+  # OLLAMA_MAX_QUEUE - Maximum number of queued requests
+  maxQueue: null  # Integer, leave null to use default
+  
+  # OLLAMA_MODELS - The path to the models directory
+  # Automatically set to /models when persistence.enabled=true
+  # Can be overridden with mountPath if needed
+  modelsPath: ""  # Leave empty to use default or auto-set from persistence
+  
+  # OLLAMA_NUM_PARALLEL - Maximum number of parallel requests
+  numParallel: null  # Integer, leave null to use default
+  
+  # OLLAMA_NOPRUNE - Do not prune model blobs on startup
+  noPrune: false  # Set to true to disable pruning
+  
+  # OLLAMA_ORIGINS - A comma separated list of allowed origins
+  origins: ""  # Example: "https://example.com,https://another.com" or "*" for all
+  
+  # OLLAMA_SCHED_SPREAD - Always schedule model across all GPUs
+  schedSpread: false  # Set to true to enable
+  
+  # OLLAMA_FLASH_ATTENTION - Enable flash attention
+  flashAttention: false  # Set to true to enable
+  
+  # OLLAMA_KV_CACHE_TYPE - Quantization type for the K/V cache (default: f16)
+  kvCacheType: ""  # Options: f16, q8_0, q4_0, etc. Leave empty for default
+  
+  # OLLAMA_LLM_LIBRARY - Set LLM library to bypass autodetection
+  llmLibrary: ""  # Example: "cuda", "rocm", "metal", "cpu"
+  
+  # OLLAMA_GPU_OVERHEAD - Reserve a portion of VRAM per GPU (bytes)
+  gpuOverhead: null  # Integer bytes, leave null to use default
+  
+  # OLLAMA_LOAD_TIMEOUT - How long to allow model loads to stall before giving up (default: "5m")
+  # For shorter first time to token and pseudo-real-time responses, set to "0" to disable timeout
+  # Examples: "5m", "10m", "1h", "0" (no timeout)
+  loadTimeout: "5m"  # Examples: "5m", "10m", "1h", "0" (no timeout for pseudo-real-time)
+  
+  # OLLAMA_GPU - Force GPU mode on/off
+  # Set to true to force GPU mode, false to disable (default: false)
+  # NOTE: CUDA kernels in this image are compiled only for the following GPU architectures:
+  #   - 61 — Pascal (GTX 1080, GTX 1070, Tesla P100)
+  #   - 75 — Turing (RTX 2080, RTX 2070, GTX 1660, Tesla T4)
+  #   - 80 / 86 — Ampere (RTX 3090, RTX 3080, RTX 3070, A100, A40)
+  #   - 89 — Ada (RTX 4090, RTX 4080, RTX 4070, L40, L40S)
+  #   - 90 — Hopper (H100)
+  #   - 100 / 120 — Blackwell families (B100, B200)
+  # Older GPU architectures (e.g., Kepler, Maxwell) are not supported.
+  # IMPORTANT: NVIDIA has announced that offline compilation support for architectures prior to
+  # compute capability 75 (Turing) will be removed in a future CUDA release. If you rely on
+  # Pascal (sm_61), pin a chart/image build that explicitly includes it. NVIDIA warning:
+  # "nvcc warning : Support for offline compilation for architectures prior to '<compute/sm/lto>_75'
+  #  will be removed in a future release (Use -Wno-deprecated-gpu-targets to suppress warning)."
+  gpu:
+    enabled: false  # Default: false (GPU auto-detection)
+  
+  # OLLAMA_LOG_LEVEL - Logging verbosity level
+  # Options: "debug", "info", "warn", "error" (default: "info")
+  logLevel: "info"
+  
+  # Startup diagnostics - Show diagnostic information at container startup
+  # Useful for troubleshooting deployment issues
+  startupDiagnostics:
+    enabled: true  # Default: true (show diagnostics)
+  
+  # OLLAMA_SHOW_SERVER_LOGS - Enable display of server logs in container log output
+  # When enabled, Ollama server logs are displayed in the container log output
+  showServerLogs: false  # Set to true to enable server logs in container output
+  
+  # -- Add insecure flag for pulling models at container startup
+  # Allows pulling from insecure registries (not recommended for production)
+  insecure: false
+  
+  # -- Override ollama-data volume mount path
+  # Default: "/models" (when persistence.enabled=true) or "/root/.ollama" (when persistence.enabled=false)
+  # Leave empty to use default
+  mountPath: ""
+  
+  # HuggingFace token configuration for pulling models from HuggingFace Hub
+  # Required for private models or to avoid rate limits on public models
+  # NOTE: HF_TOKEN works for rate limits and some operations, but private models require SSH keys
+  hfToken:
+    # Use credentials from Kubernetes secret (RECOMMENDED for production)
+    credentials:
+      secretName: ""  # Name of the secret containing HF_TOKEN
+      key: "token"    # Key name in the secret (default: "token")
+    # Alternative: Direct token value (NOT RECOMMENDED for production)
+    # token: ""  # Direct HF token value (use secret instead)
+  
+  # SSH key configuration for private HuggingFace models
+  # Ollama uses SSH keys (not HF_TOKEN) for authenticating with private HuggingFace repositories
+  # Both HF_TOKEN and SSH keys can be used together (HF_TOKEN for rate limits, SSH for private models)
+  # The .ssh directory is stored on model-storage at /models/.ssh and mounted to /home/ollama/.ssh in the container
+  # Works with both PVC (persistent) and emptyDir (ephemeral) - data persists only when persistence.enabled=true
+  sshKey:
+    # Enable SSH key support for private HuggingFace models
+    enabled: false
+    # Kubernetes secret containing SSH private key
+    # Secret should contain the SSH private key (typically id_rsa, id_ed25519, etc.)
+    secretName: ""  # Name of the secret containing SSH private key
+    key: "id_rsa"   # Key name in the secret (default: "id_rsa")
+    # SSH key mount path in the container (default: /home/ollama/.ssh - Ollama's expected location)
+    # The actual SSH directory is stored on PVC at /models/.ssh and mounted here
+    mountPath: "/home/ollama/.ssh"
+    # SSH key file permissions (default: 0600 for private keys)
+    keyMode: "0600"
+  
+  # Models management - automatic model pulling and cache synchronization
+  # Useful for GitOps deployments where you want models ready before serving traffic
+  # 
+  # The entrypoint script reads OLLAMA_AUTO_PULL_MODELS env var (comma-separated list)
+  # Entrypoint script will:
+  #   1. Pull models listed here (if not already in cache)
+  #   2. Automatically remove models from cache that are NOT in this list
+  models:
+    # -- List of models to pull at container startup
+    # Models are automatically pulled if not already present in cache
+    # The more you add, the longer the container will take to start if models are not present
+    # Models are pulled sequentially, but large models can take several minutes
+    # 
+    # AUTOMATIC CACHE SYNCHRONIZATION:
+    # The entrypoint script automatically syncs the model cache with this list:
+    #   - Models in this list are pulled if missing
+    #   - Models NOT in this list are automatically removed from cache
+    #   - Removing a model from this list will cause it to be deleted on next container restart
+    # 
+    # Supported formats:
+    # 1. Ollama catalog models: Use simple names like "llama2", "mistral", "llama3.1"
+    # 2. HuggingFace models: Use URLs like "hf.co/google/gemma-7b-it" or "google/gemma-7b-it"
+    #    (Ollama supports both formats - with or without the "hf.co/" prefix)
+    # 
+    # Models are pulled using: ollama pull <model>
+    # The pull operation downloads the model to the PVC (if persistence enabled) or emptyDir
+    pull: []
+    # pull:
+    #   - llama2                    # Ollama catalog model
+    #   - mistral                   # Ollama catalog model
+    #   - hf.co/google/gemma-7b-it  # HuggingFace model (full URL)
+    #   - google/gemma-7b-it        # HuggingFace model (short format, also supported)
+
+    # -- Control how/when models are pulled
+    # By default, this chart passes OLLAMA_AUTO_PULL_MODELS to the container entrypoint.
+    # If your entrypoint hard-fails on a gated HF model (401), prefer HF_TOKEN / accept license, or set autoPull.enabled=false and pull out-of-band.
+    autoPull:
+      enabled: true
+
+    # -- Derived models (Modelfile FROM + PARAMETER): applied by the Ollama image entrypoint only (no Helm hook Job).
+    # Chart mounts derived-models.json and sets OLLAMA_DERIVED_MODELS_*; see ENTRYPOINT_DERIVED_MODELS_SPEC.md.
+    # Rendered values are the source of truth. Bases in `from` must be pulled idempotently by the entrypoint if missing;
+    # models.pull is optional for those bases (e.g. prewarming) but still included in OLLAMA_SYNC_RETAIN_MODELS_JSON.
+    # The manifest and retain JSON use your logical name plus -<Release.Namespace> (after the tag when name is model:tag).
+    # Only rows whose `from` appears in models.pull (exact string) are included in derived-models.json for the entrypoint.
+    derivedModels: []
+    # derivedModels:
+    #   - name: my-orchestrator:120b
+    #     from: nemotron-3-super:120b
+    #     parameters:
+    #       num_ctx: 1000000
+    #       temperature: 0.1
+    #       top_p: 1
+    #       seed: 42
+    #       repeat_last_n: 64
+    #       repeat_penalty: 1.1
+    #       stop: "</s>"   # string, or use a list for multiple stop sequences
+    #       # stop:
+    #       #   - "</s>"
+    #       #   - "<|end|>"
+    #       num_predict: -1
+    #       top_k: 40
+    #       min_p: 0.0
+
+    # -- List of models to create at container startup
+    # Two options:
+    # 1. Create a raw model from a template (inline)
+    # 2. Load a model from ConfigMaps (ConfigMaps must be created before and mounted as volumes)
+    create: []
+    # create:
+    #   # Example: Create model from ConfigMap
+    #   - name: llama3.1-ctx32768
+    #     configMapRef: my-configmap
+    #     configMapKeyRef: configmap-key
+    #   # Example: Create model from inline template
+    #   - name: llama3.1-ctx32768
+    #     template: |
+    #       FROM llama3.1
+    #       PARAMETER num_ctx 32768
+    
+    # -- Automatically remove models present on the disk but not specified in the values file
+    # NOTE: This is now handled automatically by the entrypoint script
+    # Models NOT in the pull: list are automatically removed from cache on container startup
+    # This property is kept for backward compatibility but is no longer used
+    # The entrypoint script always performs cache synchronization based on the pull: list
+    clean: false
+  
+  # Additional command line arguments for ollama serve
+  # Ollama uses 'ollama serve' with minimal CLI flags (all config via env vars)
+  # Use this for any custom CLI arguments if needed
+  additionalArgs: []
+  # additionalArgs:
+  #   - "--custom-flag"
+  #   - "value"
+  
+  # Additional environment variables
+  # Each environment variable must specify either 'value' OR 'valueFrom', but NOT both.
+  env: []
+
+# -- Lifecycle hooks for pod assignment (override ollama.models startup pull/run)
+# Can be used to customize startup/shutdown behavior beyond the models configuration
+# Example:
+# lifecycle:
+#   postStart:
+#     exec:
+#       command: ["/bin/sh", "-c", "echo 'Container started'"]
+#   preStop:
+#     exec:
+#       command: ["/bin/sh", "-c", "sleep 10"]
+lifecycle: {}
+
+# Persistent volume for model storage
+# IMPORTANT: This chart defaults to readOnlyRootFilesystem: true for security.
+# A PersistentVolumeClaim (PVC) is REQUIRED when persistence is enabled.
+# The PVC will be mounted at /models and used for:
+#   - Model storage (OLLAMA_MODELS)
+#   - Cache directories
+#   - Writable temporary directory (/models/tmp via TMPDIR, TEMP, TMP environment variables)
+# Deployments without a PVC will fail because Ollama requires a writable directory for models.
+#
+# PVC EXPANSION SUPPORT:
+# The chart supports PVC expansion if your storage class allows it (allowVolumeExpansion: true).
+# To expand the PVC:
+#   1. Update persistence.size in values.yaml (e.g., from 50Gi to 100Gi)
+#   2. Run: helm upgrade <release> <chart> -f values.yaml
+#   3. Kubernetes will automatically expand the volume (no data loss)
+# Note: Some storage classes (like local-path, gp3, standard) support online expansion.
+persistence:
+  enabled: true
+  # existingClaim: If set, uses an existing PVC instead of creating a new one
+  # This is useful when you have a pre-created PVC with model data
+  # Example: existingClaim: "ollama-pvc"
+  existingClaim: ""
+  # name: If set (and existingClaim is empty), uses this exact name for the new PVC
+  # If empty, defaults to {{ include "ollama.fullname" . }}-models
+  # Example: name: "ollama-pvc" or leave empty for auto-generated name
+  name: ""
+  # storageClass: "" # REQUIRED in most clusters. Example: "gp3", "standard", "fast-ssd"
+  # Only used when creating a new PVC (existingClaim is empty)
+  # IMPORTANT: For storage classes with strict locality requirements, use a StorageClass with volumeBindingMode: WaitForFirstConsumer
+  # This ensures the PVC waits for a pod to be scheduled before binding, which is required for strict locality
+  # Example StorageClass configuration:
+  #   volumeBindingMode: WaitForFirstConsumer
+  #   allowVolumeExpansion: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 100Gi  # Increased from 50Gi to accommodate large models (10-15GB), cache, and temporary files
+  # Only used when creating a new PVC (existingClaim is empty)
+  # CRITICAL: New PVCs are protected from deletion by default with these annotations:
+  # - helm.sh/resource-policy: keep
+  # - argocd.argoproj.io/sync-options: Prune=false,Delete=false
+  # - resources.fluxcd.io/ignore: true
+  # This prevents ArgoCD/Helm/Flux from deleting the PVC with model data
+  # To allow deletion, you must manually remove the annotations or delete the PVC directly
+  annotations: {}
+
+# Init containers to set up directories on the PVC and SSH keys
+# This is required when using readOnlyRootFilesystem: true
+# Note: The PVC is created as a regular resource (no Helm hooks for GitOps compatibility)
+# Kubernetes automatically waits for it to be bound before starting pods that mount it
+initContainers:
+  - name: fix-permissions
+    image: busybox:latest
+    securityContext:
+      runAsUser: 0  # Run as root to fix permissions
+      runAsNonRoot: false
+      readOnlyRootFilesystem: false  # Allow writes for setup
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+        add:
+          - CHOWN
+    command:
+      - sh
+      - -c
+      - |
+        echo "Fixing directory permissions for ollama user (UID 1001)..."
+        
+        # Fix /models root directory permissions
+        chmod 1777 /models 2>/dev/null || true
+        chown 1001:1001 /models 2>/dev/null || true
+        
+        # Create /models/tmp for temporary files
+        mkdir -p /models/tmp
+        chmod 1777 /models/tmp 2>/dev/null || true
+        chown 1001:1001 /models/tmp 2>/dev/null || true
+        
+        # Create /models/.cache for persistent cache directories
+        mkdir -p /models/.cache/torchinductor
+        mkdir -p /models/.cache/ollama
+        chmod -R 1777 /models/.cache 2>/dev/null || true
+        chown -R 1001:1001 /models/.cache 2>/dev/null || true
+        
+        # Create /models/.ollama for Ollama's home directory files (SSH keys, config, etc.)
+        mkdir -p /models/.ollama
+        chmod 1777 /models/.ollama 2>/dev/null || true
+        chown 1001:1001 /models/.ollama 2>/dev/null || true
+        
+        echo "Permissions fixed"
+    volumeMounts:
+      - name: model-storage
+        mountPath: /models
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+        ephemeral-storage: 100Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+        ephemeral-storage: 500Mi
+
+# Extra volumes (in addition to the persistence volume)
+# Can be used for additional storage needs
+extraVolumes: []
+
+# Extra volume mounts for the main container
+extraVolumeMounts: []
+
+# Network Policy
+# Restricts pod-to-pod communication within the cluster while allowing internet access
+# This is a security hardening measure that prevents lateral movement
+# ENABLED BY DEFAULT as part of the security-hardened configuration
+# Set to false if your cluster doesn't support NetworkPolicy or you need cluster-internal communication
+#
+# Restrict ingress via networkPolicy.ingress.from (namespaceSelector/podSelector) for production.
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+    # Optional: restrict via namespaceSelector/podSelector; if empty, allows all namespaces.
+    # Examples:
+    #   - namespaceSelector:
+    #       matchLabels:
+    #         name: allowed-namespace
+    #   - podSelector:
+    #       matchLabels:
+    #         app: allowed-app
+    #   - namespaceSelector:
+    #       matchLabels:
+    #         name: trusted-namespace
+    #     podSelector:
+    #       matchLabels:
+    #         app: trusted-client
+    from: []
+  egress:
+    # Allow DNS resolution (required for external connections)
+    # SECURITY: DNS is restricted to cluster DNS pods only (prevents DNS tunneling attacks)
+    # Pods cannot directly query external DNS servers - all DNS goes through cluster DNS
+    allowDNS: true
+    dnsNamespace: kube-system
+    # Block cluster CIDR ranges (set to true and provide clusterCIDR if known)
+    blockClusterCIDR: false
+    clusterCIDR: ""  # e.g., "10.96.0.0/12" for default Kubernetes service CIDR
+    # Allowed outbound ports (if empty, defaults to HTTPS 443 and DNS 53)
+    # Force-deny all egress by default except DNS + HTTPS for maximum security
+    allowedPorts: []
+      # Defaults to:
+      # - protocol: TCP
+      #   port: 443  # HTTPS
+      # - protocol: UDP
+      #   port: 53   # DNS
+      # - protocol: TCP
+      #   port: 53   # DNS
+    # Example:
+    # allowedPorts:
+    #   - protocol: TCP
+    #     port: 443
+    #   - protocol: TCP
+    #     port: 80
+    # Additional egress rules (optional)
+    additionalRules: []
+    # Example for allowing specific external services:
+    # additionalRules:
+    #   - to:
+    #       - ipBlock:
+    #           cidr: 1.2.3.4/32
+    #     ports:
+    #       - protocol: TCP
+    #         port: 443
+
+# Pod Disruption Budget
+# Prevents accidental eviction during node upgrades
+podDisruptionBudget:
+  enabled: true
+  # Minimum number of pods that must be available (default: 1)
+  minAvailable: 1
+  # Alternative: Maximum number of pods that can be unavailable
+  # maxUnavailable: 0
+
+# Warmup Job
+# Post-deployment job that sends a warmup request to Ollama to initialize the model
+# This helps ensure the model is loaded and ready before serving traffic
+warmup:
+  enabled: false  # Enable/disable warmup job
+  testText: "Warmup"  # Text to send in the warmup request
+  # Pre-hook configuration (waits for pod to be healthy before warmup job runs)
+  deploymentReadyTimeout: 600  # Time to wait for deployment to be ready (10 minutes default, increase for large models)
+  healthCheckTimeout: 600  # Time to wait for health endpoint (10 minutes default, increase for large models)
+  # Warmup job configuration (sends the actual warmup request)
+  backoffLimit: 3  # Number of retries before job is marked as failed
+  activeDeadlineSeconds: 300  # Maximum time the warmup job can run (5 minutes, just for HTTP request)
+  # Container image for both pre-hook and warmup job (needs curl for HTTP requests and Kubernetes API access)
+  # Using alpine-based image that can access Kubernetes API via service account token
+  image:
+    repository: curlimages/curl
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+# Monitoring
+monitoring:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s

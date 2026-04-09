@@ -1,0 +1,38 @@
+annotations:
+  artifacthub.io/containsSecurityUpdates: "true"
+  category: ai-machine-learning
+  images: |
+    - name: ollama
+      image: ghcr.io/arktec-quant/ollama:v0.18.2-cuda-12.8
+  licenses: Apache-2.0
+  tanzuCategory: service
+apiVersion: v2
+appVersion: 0.18.2
+description: A production-grade, security-hardened Helm chart by Arktec Quant for
+  Ollama with multi-model serving and GitOps-first configuration. Built with hardened
+  SecOps defaults. Main container aligns with Kubernetes Pod Security Standards (Restricted);
+  init containers run as root for setup tasks. Tracks upstream Ollama 0.18.x (appVersion
+  0.18.2). Uses CUDA 12.8 image.
+home: https://charts.arktecquant.com
+icon: https://charts.arktecquant.com/img/charts/ollama.png
+keywords:
+- oss
+- ollama
+- ai
+- ml
+- llm
+- edge-ai
+- inference
+- serving
+- gpu
+- cuda-12.8
+- hardened
+- security
+maintainers:
+- email: helm.chart.maintainers@arktecquant.com
+  name: Arktec Quant Devex Agent
+name: ollama
+sources:
+- https://charts.arktecquant.com
+- https://github.com/ollama/ollama
+version: 1.0.8

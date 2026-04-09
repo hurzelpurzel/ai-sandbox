@@ -1,0 +1,1255 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "replicaCount": {
+      "type": "integer",
+      "title": "Number of replicas",
+      "form": true,
+      "description": "Number of Ollama replicas to deploy",
+      "minimum": 1,
+      "default": 1
+    },
+    "strategy": {
+      "type": "object",
+      "title": "Deployment strategy",
+      "form": true,
+      "description": "Deployment update strategy. When persistence is enabled with ReadWriteOnce, default is Recreate to ensure only one pod mounts the PVC at a time.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "Strategy type",
+          "form": true,
+          "description": "Deployment strategy type. Empty string uses default (Recreate when persistence enabled, RollingUpdate otherwise)",
+          "enum": ["", "Recreate", "RollingUpdate"],
+          "default": ""
+        },
+        "rollingUpdate": {
+          "type": "object",
+          "title": "Rolling update configuration",
+          "form": true,
+          "description": "Configuration for RollingUpdate strategy (only used when type is RollingUpdate)",
+          "properties": {
+            "maxSurge": {
+              "type": ["integer", "string"],
+              "title": "Max surge",
+              "form": true,
+              "description": "Maximum number of pods that can be created over the desired number",
+              "default": 1
+            },
+            "maxUnavailable": {
+              "type": ["integer", "string"],
+              "title": "Max unavailable",
+              "form": true,
+              "description": "Maximum number of pods that can be unavailable during update",
+              "default": 0
+            }
+          }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "title": "Image configuration",
+      "form": true,
+      "properties": {
+        "repository": {
+          "type": "string",
+          "title": "Image repository",
+          "form": true,
+          "default": "ghcr.io/arktec-quant/ollama"
+        },
+        "tag": {
+          "type": "string",
+          "title": "Image tag",
+          "form": true,
+          "default": "v0.18.2-cuda-12.8"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "title": "Image pull policy",
+          "form": true,
+          "enum": ["Always", "IfNotPresent", "Never"],
+          "default": "IfNotPresent"
+        }
+      }
+    },
+    "podLabels": {
+      "type": "object",
+      "title": "Pod labels",
+      "form": true,
+      "description": "Map of labels to add to the pods",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {}
+    },
+    "lifecycle": {
+      "type": ["object", "null"],
+      "title": "Lifecycle hooks",
+      "form": true,
+      "description": "Lifecycle hooks for pod assignment (override ollama.models startup pull/run). Can be used to customize startup/shutdown behavior.",
+      "default": null
+    },
+    "terminationGracePeriodSeconds": {
+      "type": ["integer", "null"],
+      "title": "Termination grace period",
+      "form": true,
+      "description": "Wait for a grace period before terminating pods (seconds). Useful for graceful shutdown of long-running inference requests.",
+      "minimum": 0,
+      "default": 120
+    },
+    "hostIPC": {
+      "type": ["boolean", "null"],
+      "title": "Host IPC",
+      "form": true,
+      "description": "Use the host's IPC namespace (default: false for security). Only enable if required for specific use cases.",
+      "default": false
+    },
+    "hostPID": {
+      "type": ["boolean", "null"],
+      "title": "Host PID",
+      "form": true,
+      "description": "Use the host's PID namespace (default: false for security). Only enable if required for specific use cases.",
+      "default": false
+    },
+    "hostNetwork": {
+      "type": ["boolean", "null"],
+      "title": "Host network",
+      "form": true,
+      "description": "Use the host's network namespace (default: false for security). Controlled by podSecurityStandards.disallowHostNetwork, but can be explicitly overridden here.",
+      "default": null
+    },
+    "service": {
+      "type": "object",
+      "title": "Service configuration",
+      "form": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "Service type",
+          "form": true,
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"],
+          "default": "ClusterIP"
+        },
+        "port": {
+          "type": "integer",
+          "title": "Service port",
+          "form": true,
+          "default": 11434
+        },
+        "targetPort": {
+          "type": "integer",
+          "title": "Target port",
+          "form": true,
+          "default": 11434
+        },
+        "nodePort": {
+          "type": ["integer", "null"],
+          "title": "NodePort",
+          "form": true,
+          "description": "NodePort number (30000-32767). Only used when type is NodePort. If not specified, Kubernetes assigns a random port.",
+          "minimum": 30000,
+          "maximum": 32767
+        },
+        "loadBalancerIP": {
+          "type": ["string", "null"],
+          "title": "LoadBalancer IP",
+          "form": true,
+          "description": "LoadBalancer IP address. Only used when type is LoadBalancer.",
+          "default": null
+        },
+        "ipFamilies": {
+          "type": "array",
+          "title": "IP Families",
+          "form": true,
+          "description": "IP Families for the service (IPv4, IPv6, or both)",
+          "items": {
+            "type": "string",
+            "enum": ["IPv4", "IPv6"]
+          },
+          "default": []
+        },
+        "ipFamilyPolicy": {
+          "type": ["string", "null"],
+          "title": "IP Family Policy",
+          "form": true,
+          "description": "IP Family Policy for the service",
+          "enum": ["", "SingleStack", "PreferDualStack", "RequireDualStack"],
+          "default": ""
+        }
+      }
+    },
+    "ollama": {
+      "type": "object",
+      "title": "Ollama configuration",
+      "form": true,
+      "description": "Ollama configuration. All settings are configured via environment variables (Ollama uses env vars, not CLI arguments).",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "title": "Server port",
+          "form": true,
+          "description": "Server port (default: 11434). OLLAMA_HOST is automatically set to 0.0.0.0:<port> for Kubernetes.",
+          "default": 11434
+        },
+        "debug": {
+          "type": "string",
+          "title": "Debug mode",
+          "form": true,
+          "description": "OLLAMA_DEBUG - Show additional debug information. Set to '1' to enable, leave empty to disable.",
+          "default": ""
+        },
+        "contextLength": {
+          "type": "string",
+          "title": "Context length",
+          "form": true,
+          "description": "OLLAMA_CONTEXT_LENGTH - Override default context window size (e.g. 4096, 32768). Use \"0\" for Ollama no-limit / default-disable semantics. Must be a string (not a JSON number). Leave empty to omit the env var.",
+          "default": ""
+        },
+        "ginMode": {
+          "type": "string",
+          "title": "GIN framework mode",
+          "form": true,
+          "description": "GIN_MODE - GIN framework mode (debug or release). For production, it is recommended to set this to 'release' to reduce log verbosity. Default is 'debug' which shows detailed GIN framework logs.",
+          "enum": ["debug", "release"],
+          "default": "debug"
+        },
+        "host": {
+          "type": "string",
+          "title": "Host address",
+          "form": true,
+          "description": "OLLAMA_HOST - IP Address for the ollama server (default: 127.0.0.1:11434). Leave empty to use default (0.0.0.0:11434 for Kubernetes). Format: '0.0.0.0:11434' or leave empty for auto.",
+          "default": ""
+        },
+        "cloud": {
+          "type": "object",
+          "title": "Ollama Cloud",
+          "form": true,
+          "description": "Ollama Cloud outbound configuration. Supports direct API key injection and explicit local-only mode.",
+          "properties": {
+            "disable": {
+              "type": "boolean",
+              "title": "Disable Ollama Cloud",
+              "form": true,
+              "description": "Set OLLAMA_NO_CLOUD=1 to force local-only mode and disable cloud features.",
+              "default": false
+            },
+            "apiKey": {
+              "type": "string",
+              "title": "Cloud API key (direct)",
+              "form": true,
+              "description": "OLLAMA_API_KEY direct value (not recommended for production). Prefer apiKeySecret.",
+              "default": ""
+            },
+            "apiKeySecret": {
+              "type": "object",
+              "title": "Cloud API key secret",
+              "form": true,
+              "description": "Kubernetes Secret reference for OLLAMA_API_KEY.",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Secret name",
+                  "form": true,
+                  "description": "Name of the Kubernetes Secret containing the API key.",
+                  "default": ""
+                },
+                "key": {
+                  "type": "string",
+                  "title": "Secret key",
+                  "form": true,
+                  "description": "Key inside the Secret containing the API key value.",
+                  "default": "api-key"
+                }
+              },
+              "default": {}
+            }
+          },
+          "default": {}
+        },
+        "keepAlive": {
+          "type": "string",
+          "title": "Keep alive duration",
+          "form": true,
+          "description": "OLLAMA_KEEP_ALIVE - The duration that models stay loaded in memory (default: '5m'). Examples: '5m', '10m', '1h'.",
+          "default": "5m"
+        },
+        "maxLoadedModels": {
+          "type": ["integer", "null"],
+          "title": "Max loaded models",
+          "form": true,
+          "description": "OLLAMA_MAX_LOADED_MODELS - Maximum number of loaded models per GPU. Leave null to use default.",
+          "default": null
+        },
+        "maxQueue": {
+          "type": ["integer", "null"],
+          "title": "Max queue",
+          "form": true,
+          "description": "OLLAMA_MAX_QUEUE - Maximum number of queued requests. Leave null to use default.",
+          "default": null
+        },
+        "numParallel": {
+          "type": ["integer", "null"],
+          "title": "Number of parallel requests",
+          "form": true,
+          "description": "OLLAMA_NUM_PARALLEL - Maximum number of parallel requests. Leave null to use default.",
+          "default": null
+        },
+        "noPrune": {
+          "type": "boolean",
+          "title": "No prune",
+          "form": true,
+          "description": "OLLAMA_NOPRUNE - Do not prune model blobs on startup. Set to true to disable pruning.",
+          "default": false
+        },
+        "origins": {
+          "type": "string",
+          "title": "Allowed origins",
+          "form": true,
+          "description": "OLLAMA_ORIGINS - A comma separated list of allowed origins. Example: 'https://example.com,https://another.com' or '*' for all.",
+          "default": ""
+        },
+        "schedSpread": {
+          "type": "boolean",
+          "title": "Schedule spread",
+          "form": true,
+          "description": "OLLAMA_SCHED_SPREAD - Always schedule model across all GPUs. Set to true to enable.",
+          "default": false
+        },
+        "flashAttention": {
+          "type": "boolean",
+          "title": "Flash attention",
+          "form": true,
+          "description": "OLLAMA_FLASH_ATTENTION - Enable flash attention. Set to true to enable.",
+          "default": false
+        },
+        "kvCacheType": {
+          "type": "string",
+          "title": "KV cache type",
+          "form": true,
+          "description": "OLLAMA_KV_CACHE_TYPE - Quantization type for the K/V cache (default: f16). Options: f16, q8_0, q4_0, etc. Leave empty for default.",
+          "default": ""
+        },
+        "llmLibrary": {
+          "type": "string",
+          "title": "LLM library",
+          "form": true,
+          "description": "OLLAMA_LLM_LIBRARY - Set LLM library to bypass autodetection. Example: 'cuda', 'rocm', 'metal', 'cpu'.",
+          "default": ""
+        },
+        "gpuOverhead": {
+          "type": ["integer", "null"],
+          "title": "GPU overhead",
+          "form": true,
+          "description": "OLLAMA_GPU_OVERHEAD - Reserve a portion of VRAM per GPU (bytes). Leave null to use default.",
+          "default": null
+        },
+        "loadTimeout": {
+          "type": "string",
+          "title": "Load timeout",
+          "form": true,
+          "description": "OLLAMA_LOAD_TIMEOUT - How long to allow model loads to stall before giving up (default: '5m'). Examples: '5m', '10m', '1h'.",
+          "default": "5m"
+        },
+        "modelsPath": {
+          "type": "string",
+          "title": "Models path",
+          "form": true,
+          "description": "OLLAMA_MODELS - The path to the models directory. Automatically set to /models when persistence.enabled=true. Leave empty to use default.",
+          "default": ""
+        },
+        "gpu": {
+          "type": "object",
+          "title": "GPU configuration",
+          "form": true,
+          "description": "Force GPU mode on/off",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable GPU",
+              "form": true,
+              "description": "Set to true to force GPU mode, false to disable (default: false, uses auto-detection)",
+              "default": false
+            }
+          },
+          "default": {}
+        },
+        "logLevel": {
+          "type": "string",
+          "title": "Log level",
+          "form": true,
+          "description": "OLLAMA_LOG_LEVEL - Logging verbosity level. Options: 'debug', 'info', 'warn', 'error'",
+          "enum": ["debug", "info", "warn", "error"],
+          "default": "info"
+        },
+        "startupDiagnostics": {
+          "type": "object",
+          "title": "Startup diagnostics",
+          "form": true,
+          "description": "Show diagnostic information at container startup. Useful for troubleshooting deployment issues.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable startup diagnostics",
+              "form": true,
+              "description": "Show diagnostic information at container startup",
+              "default": true
+            }
+          },
+          "default": {}
+        },
+        "showServerLogs": {
+          "type": "boolean",
+          "title": "Show server logs",
+          "form": true,
+          "description": "OLLAMA_SHOW_SERVER_LOGS - Enable display of server logs in container log output. When enabled, Ollama server logs are displayed in the container log output.",
+          "default": false
+        },
+        "sshKey": {
+          "type": "object",
+          "title": "SSH key configuration",
+          "form": true,
+          "description": "SSH key configuration for private HuggingFace models. Ollama uses SSH keys (not HF_TOKEN) for authenticating with private HuggingFace repositories. Both HF_TOKEN and SSH keys can be used together (HF_TOKEN for rate limits, SSH for private models).",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable SSH key",
+              "form": true,
+              "description": "Enable SSH key support for private HuggingFace models",
+              "default": false
+            },
+            "secretName": {
+              "type": "string",
+              "title": "Secret name",
+              "form": true,
+              "description": "Name of the Kubernetes secret containing SSH private key",
+              "default": ""
+            },
+            "key": {
+              "type": "string",
+              "title": "Secret key",
+              "form": true,
+              "description": "Key name in the secret for the SSH private key (default: 'id_rsa')",
+              "default": "id_rsa"
+            },
+            "mountPath": {
+              "type": "string",
+              "title": "Mount path",
+              "form": true,
+              "description": "SSH key mount path (default: '/root/.ssh')",
+              "default": "/root/.ssh"
+            },
+            "keyMode": {
+              "type": "string",
+              "title": "Key file permissions",
+              "form": true,
+              "description": "SSH key file permissions (default: '0600' for private keys)",
+              "default": "0600"
+            }
+          },
+          "default": {}
+        },
+        "hfToken": {
+          "type": "object",
+          "title": "HuggingFace token",
+          "form": true,
+          "description": "HuggingFace token configuration for pulling models from HuggingFace Hub. Required for rate limit avoidance. Note: Private models require SSH keys, not HF_TOKEN.",
+          "properties": {
+            "credentials": {
+              "type": "object",
+              "title": "Credentials from secret",
+              "form": true,
+              "description": "Use credentials from Kubernetes secret (RECOMMENDED for production)",
+              "properties": {
+                "secretName": {
+                  "type": "string",
+                  "title": "Secret name",
+                  "form": true,
+                  "description": "Name of the secret containing HF_TOKEN",
+                  "default": ""
+                },
+                "key": {
+                  "type": "string",
+                  "title": "Secret key",
+                  "form": true,
+                  "description": "Key name in the secret (default: 'token')",
+                  "default": "token"
+                }
+              },
+              "default": {}
+            },
+            "token": {
+              "type": ["string", "null"],
+              "title": "Direct token",
+              "form": true,
+              "description": "Direct HF token value (NOT RECOMMENDED for production - use secret instead)",
+              "default": null
+            }
+          },
+          "default": {}
+        },
+        "insecure": {
+          "type": "boolean",
+          "title": "Insecure pull",
+          "form": true,
+          "description": "Add insecure flag for pulling models at container startup. Allows pulling from insecure registries (not recommended for production).",
+          "default": false
+        },
+        "mountPath": {
+          "type": "string",
+          "title": "Mount path override",
+          "form": true,
+          "description": "Override ollama-data volume mount path. Default: '/models' (when persistence.enabled=true) or '/root/.ollama' (when persistence.enabled=false). Leave empty to use default.",
+          "default": ""
+        },
+        "models": {
+          "type": "object",
+          "title": "Models management",
+          "form": true,
+          "description": "Models management - automatic model pulling and cache synchronization. Models in the pull list are automatically pulled if missing, and models NOT in the list are automatically removed from cache. Useful for GitOps deployments where you want models ready before serving traffic.",
+          "properties": {
+            "autoPull": {
+              "type": "object",
+              "title": "Auto-pull (entrypoint)",
+              "form": true,
+              "description": "Controls whether the chart sets OLLAMA_AUTO_PULL_MODELS for the container entrypoint script.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "title": "Enable entrypoint auto-pull",
+                  "form": true,
+                  "default": true
+                }
+              },
+              "default": {}
+            },
+            "pull": {
+              "type": "array",
+              "title": "Models to pull",
+              "form": true,
+              "description": "List of models to pull at container startup. Models in this list are pulled if missing, and models NOT in this list are automatically removed from cache. The more you add, the longer the container will take to start if models are not present.",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "derivedModels": {
+              "type": "array",
+              "title": "Derived models",
+              "form": true,
+              "description": "GitOps-defined models built from a base (FROM) with Modelfile PARAMETER lines. Applied only by the Ollama image entrypoint via mounted derived-models.json and OLLAMA_DERIVED_MODELS_* (see ENTRYPOINT_DERIVED_MODELS_SPEC.md). Rendered values are authoritative. Helm appends -<Release.Namespace> to each logical name. Only rows whose `from` string equals an entry in models.pull are emitted to the manifest and retain JSON.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "from"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "title": "Derived model name",
+                    "description": "Logical Ollama model name in values; rendered manifest uses this plus -<Release.Namespace> (model:tag → model:tag-<ns>, else name-<ns>) when `from` is listed in models.pull.",
+                    "minLength": 1
+                  },
+                  "from": {
+                    "type": "string",
+                    "title": "Base model name",
+                    "minLength": 1
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "title": "Modelfile parameters",
+                    "additionalProperties": false,
+                    "properties": {
+                      "num_ctx": { "type": "integer", "minimum": 1 },
+                      "repeat_last_n": { "type": "integer" },
+                      "repeat_penalty": { "type": "number", "minimum": 0, "maximum": 10 },
+                      "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+                      "seed": { "type": "integer" },
+                      "stop": {
+                        "oneOf": [
+                          { "type": "string", "minLength": 1 },
+                          {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": { "type": "string", "minLength": 1 }
+                          }
+                        ]
+                      },
+                      "num_predict": { "type": "integer", "minimum": -1 },
+                      "top_k": { "type": "integer", "minimum": 0 },
+                      "top_p": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "min_p": { "type": "number", "minimum": 0, "maximum": 1 }
+                    }
+                  }
+                }
+              },
+              "default": []
+            },
+            "create": {
+              "type": "array",
+              "title": "Models to create",
+              "form": true,
+              "description": "List of models to create at container startup. Can create from ConfigMaps or inline templates.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "title": "Model name"
+                  },
+                  "configMapRef": {
+                    "type": ["string", "null"],
+                    "title": "ConfigMap reference"
+                  },
+                  "configMapKeyRef": {
+                    "type": ["string", "null"],
+                    "title": "ConfigMap key reference"
+                  },
+                  "template": {
+                    "type": ["string", "null"],
+                    "title": "Model template"
+                  }
+                },
+                "required": ["name"]
+              },
+              "default": []
+            },
+            "clean": {
+              "type": "boolean",
+              "title": "Clean unused models",
+              "form": true,
+              "description": "NOTE: This property is deprecated. Cache cleanup is handled by the entrypoint script. Models NOT in the pull: list are automatically removed from cache on container startup. This property is kept for backward compatibility but is no longer used.",
+              "default": false
+            }
+          },
+          "default": {}
+        },
+        "additionalArgs": {
+          "type": "array",
+          "title": "Additional arguments",
+          "form": true,
+          "description": "Additional Ollama command line arguments (Ollama uses 'ollama serve' command with minimal CLI args).",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "env": {
+          "type": "array",
+          "title": "Environment variables",
+          "form": true,
+          "description": "Additional environment variables for the Ollama container. Each environment variable must specify either 'value' OR 'valueFrom', but NOT both.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "title": "Variable name"
+              },
+              "value": {
+                "type": ["string", "null"],
+                "title": "Variable value",
+                "description": "Direct value for the environment variable. Mutually exclusive with valueFrom. Set to null or omit if using valueFrom."
+              },
+              "valueFrom": {
+                "type": ["object", "null"],
+                "title": "Value from source",
+                "description": "Value from a secret, configMap, or other source. Mutually exclusive with value. Set to null or omit if using value.",
+                "properties": {
+                  "secretKeyRef": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "title": "Secret name"
+                      },
+                      "key": {
+                        "type": "string",
+                        "title": "Secret key"
+                      }
+                    },
+                    "required": ["name", "key"]
+                  },
+                  "configMapKeyRef": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "title": "ConfigMap name"
+                      },
+                      "key": {
+                        "type": "string",
+                        "title": "ConfigMap key"
+                      }
+                    },
+                    "required": ["name", "key"]
+                  },
+                  "fieldRef": {
+                    "type": "object",
+                    "properties": {
+                      "fieldPath": {
+                        "type": "string",
+                        "title": "Field path",
+                        "description": "Kubernetes field path (e.g., metadata.name, status.podIP)"
+                      }
+                    },
+                    "required": ["fieldPath"]
+                  },
+                  "resourceFieldRef": {
+                    "type": "object",
+                    "properties": {
+                      "containerName": {
+                        "type": "string",
+                        "title": "Container name"
+                      },
+                      "resource": {
+                        "type": "string",
+                        "title": "Resource",
+                        "description": "Resource to reference (e.g., limits.cpu, requests.memory)"
+                      },
+                      "divisor": {
+                        "type": "string",
+                        "title": "Divisor",
+                        "description": "Divisor to normalize the resource value"
+                      }
+                    },
+                    "required": ["resource"]
+                  }
+                }
+              }
+            },
+            "required": ["name"],
+            "oneOf": [
+              {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "required": ["valueFrom"],
+                "properties": {
+                  "valueFrom": {
+                    "type": "object"
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
+          "default": []
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "title": "Resource configuration",
+      "form": true,
+      "properties": {
+        "gpuResourceType": {
+          "type": "string",
+          "title": "GPU resource type",
+          "form": true,
+          "description": "GPU resource type - can be 'nvidia.com/gpu' (default) or 'gpu'. Set to 'gpu' for generic GPU resources, or 'nvidia.com/gpu' for NVIDIA-specific.",
+          "enum": ["nvidia.com/gpu", "gpu"],
+          "default": "nvidia.com/gpu"
+        },
+        "limits": {
+          "type": "object",
+          "title": "Resource limits",
+          "form": true,
+          "properties": {
+            "cpu": {
+              "type": "string",
+              "title": "CPU limit",
+              "form": true,
+              "default": "2000m"
+            },
+            "memory": {
+              "type": "string",
+              "title": "Memory limit",
+              "form": true,
+              "default": "8Gi"
+            },
+            "gpu": {
+              "type": "string",
+              "title": "GPU limit (generic)",
+              "form": true,
+              "description": "GPU resource limit using 'gpu' key. Will be mapped to gpuResourceType. Example: '0' for no GPU, '1' for one GPU, '2' for two GPUs.",
+              "default": ""
+            },
+            "nvidia.com/gpu": {
+              "type": "string",
+              "title": "GPU limit (NVIDIA)",
+              "form": true,
+              "description": "GPU resource limit using 'nvidia.com/gpu' key directly. Example: '0' for no GPU, '1' for one GPU, '2' for two GPUs.",
+              "default": ""
+            }
+          }
+        },
+        "requests": {
+          "type": "object",
+          "title": "Resource requests",
+          "form": true,
+          "properties": {
+            "cpu": {
+              "type": "string",
+              "title": "CPU request",
+              "form": true,
+              "default": "200m"
+            },
+            "memory": {
+              "type": "string",
+              "title": "Memory request",
+              "form": true,
+              "default": "4Gi"
+            },
+            "gpu": {
+              "type": "string",
+              "title": "GPU request (generic)",
+              "form": true,
+              "description": "GPU resource request using 'gpu' key. Will be mapped to gpuResourceType. Example: '0' for no GPU, '1' for one GPU, '2' for two GPUs.",
+              "default": ""
+            },
+            "nvidia.com/gpu": {
+              "type": "string",
+              "title": "GPU request (NVIDIA)",
+              "form": true,
+              "description": "GPU resource request using 'nvidia.com/gpu' key directly. Example: '0' for no GPU, '1' for one GPU, '2' for two GPUs.",
+              "default": ""
+            }
+          }
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "title": "Persistent storage",
+      "form": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable persistent storage",
+          "form": true,
+          "default": true
+        },
+        "existingClaim": {
+          "type": "string",
+          "title": "Existing PVC name",
+          "form": true,
+          "description": "If set, uses an existing PVC instead of creating a new one. Useful when you have a pre-created PVC with model data.",
+          "default": ""
+        },
+        "name": {
+          "type": "string",
+          "title": "PVC name",
+          "form": true,
+          "description": "Name of the persistent volume claim (only used when existingClaim is empty). If empty, defaults to {release-name}-models",
+          "default": ""
+        },
+        "size": {
+          "type": "string",
+          "title": "Storage size",
+          "form": true,
+          "description": "Storage size (only used when creating a new PVC, existingClaim is empty)",
+          "default": "100Gi"
+        },
+        "storageClass": {
+          "type": "string",
+          "title": "Storage class",
+          "form": true,
+          "description": "Storage class for persistent volume (only used when creating a new PVC, existingClaim is empty)"
+        },
+        "accessMode": {
+          "type": "string",
+          "title": "Access mode",
+          "form": true,
+          "enum": ["ReadWriteOnce", "ReadWriteMany", "ReadOnlyMany"],
+          "default": "ReadWriteOnce"
+        },
+        "annotations": {
+          "type": "object",
+          "title": "PVC annotations",
+          "form": true,
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "initContainers": {
+      "type": "array",
+      "title": "Init containers",
+      "form": true,
+      "description": "Init containers to run before the main container",
+      "items": {
+        "type": "object"
+      }
+    },
+    "extraVolumes": {
+      "type": "array",
+      "title": "Extra volumes",
+      "form": true,
+      "description": "Additional volumes to mount",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Volume name"
+          }
+        }
+      }
+    },
+    "extraVolumeMounts": {
+      "type": "array",
+      "title": "Extra volume mounts",
+      "form": true,
+      "description": "Additional volume mounts for the main container",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Volume name"
+          },
+          "mountPath": {
+            "type": "string",
+            "title": "Mount path"
+          },
+          "readOnly": {
+            "type": "boolean",
+            "title": "Read only"
+          },
+          "subPath": {
+            "type": "string",
+            "title": "Sub path"
+          }
+        },
+        "required": ["name", "mountPath"]
+      }
+    },
+    "securityContext": {
+      "type": "object",
+      "title": "Security context",
+      "form": true,
+      "properties": {
+        "readOnlyRootFilesystem": {
+          "type": "boolean",
+          "title": "Read-only root filesystem",
+          "form": true,
+          "description": "Enable read-only root filesystem for security",
+          "default": true
+        },
+        "runAsNonRoot": {
+          "type": "boolean",
+          "title": "Run as non-root",
+          "form": true,
+          "default": true
+        },
+        "runAsUser": {
+          "type": "integer",
+          "title": "Run as user ID",
+          "form": true,
+          "default": 1000
+        },
+        "allowPrivilegeEscalation": {
+          "type": "boolean",
+          "title": "Allow privilege escalation",
+          "form": true,
+          "description": "Prevent privilege escalation attacks",
+          "default": false
+        },
+        "capabilities": {
+          "type": "object",
+          "title": "Capabilities",
+          "form": true,
+          "properties": {
+            "drop": {
+              "type": "array",
+              "title": "Drop capabilities",
+              "form": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "title": "Ingress configuration",
+      "form": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable ingress",
+          "form": true,
+          "default": false
+        },
+        "className": {
+          "type": "string",
+          "title": "Ingress class",
+          "form": true,
+          "description": "Ingress class name"
+        },
+        "hosts": {
+          "type": "array",
+          "title": "Ingress hosts",
+          "form": true,
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string",
+                "title": "Host name"
+              },
+              "paths": {
+                "type": "array",
+                "title": "Paths",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "title": "Path"
+                    },
+                    "pathType": {
+                      "type": "string",
+                      "title": "Path type",
+                      "enum": ["Prefix", "Exact", "ImplementationSpecific"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "title": "Autoscaling configuration",
+      "form": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable autoscaling",
+          "form": true,
+          "default": false
+        },
+        "minReplicas": {
+          "type": "integer",
+          "title": "Minimum replicas",
+          "form": true,
+          "minimum": 1,
+          "default": 1
+        },
+        "maxReplicas": {
+          "type": "integer",
+          "title": "Maximum replicas",
+          "form": true,
+          "minimum": 1,
+          "default": 100
+        },
+        "targetCPUUtilizationPercentage": {
+          "type": "integer",
+          "title": "Target CPU utilization",
+          "form": true,
+          "minimum": 1,
+          "maximum": 100,
+          "default": 80
+        }
+      }
+    },
+    "runtimeClassName": {
+      "type": "string",
+      "title": "Runtime class name",
+      "form": true,
+      "description": "Runtime class name for container runtime (e.g., 'nvidia' for NVIDIA Container Runtime). Required for GPU workloads to access CUDA libraries.",
+      "default": ""
+    },
+    "monitoring": {
+      "type": "object",
+      "title": "Monitoring configuration",
+      "form": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable monitoring",
+          "form": true,
+          "default": false
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "title": "ServiceMonitor configuration",
+          "form": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable ServiceMonitor",
+              "form": true,
+              "default": false
+            },
+            "interval": {
+              "type": "string",
+              "title": "Scrape interval",
+              "form": true,
+              "default": "30s"
+            },
+            "scrapeTimeout": {
+              "type": "string",
+              "title": "Scrape timeout",
+              "form": true,
+              "default": "10s"
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "title": "Network Policy configuration",
+      "form": true,
+      "description": "Restricts pod-to-pod communication within the cluster while allowing internet access. Configure ingress.from to limit which namespaces/pods can reach Ollama.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable network policy",
+          "form": true,
+          "description": "Enable NetworkPolicy to restrict cluster-internal communication (enabled by default for security)",
+          "default": true
+        },
+        "ingress": {
+          "type": "object",
+          "title": "Ingress rules",
+          "form": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable ingress",
+              "form": true,
+              "default": true
+            },
+            "from": {
+              "type": "array",
+              "title": "Ingress sources",
+              "form": true,
+              "description": "Optional: restrict ingress using namespaceSelector or podSelector. If empty, allows all namespaces."
+            }
+          }
+        },
+        "egress": {
+          "type": "object",
+          "title": "Egress rules",
+          "form": true,
+          "properties": {
+            "allowDNS": {
+              "type": "boolean",
+              "title": "Allow DNS",
+              "form": true,
+              "description": "Allow DNS resolution (required for external connections)",
+              "default": true
+            },
+            "dnsNamespace": {
+              "type": "string",
+              "title": "DNS namespace",
+              "form": true,
+              "default": "kube-system"
+            },
+            "blockClusterCIDR": {
+              "type": "boolean",
+              "title": "Block cluster CIDR",
+              "form": true,
+              "description": "Block cluster service CIDR ranges",
+              "default": false
+            },
+            "clusterCIDR": {
+              "type": "string",
+              "title": "Cluster CIDR",
+              "form": true,
+              "description": "Cluster service CIDR (e.g., 10.96.0.0/12)"
+            },
+            "allowedPorts": {
+              "type": "array",
+              "title": "Allowed ports",
+              "form": true,
+              "description": "Allowed outbound ports (defaults to 80, 443, 8080, 8443 if empty)",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "protocol": {
+                    "type": "string",
+                    "title": "Protocol",
+                    "enum": ["TCP", "UDP"]
+                  },
+                  "port": {
+                    "type": "integer",
+                    "title": "Port"
+                  }
+                }
+              }
+            },
+            "additionalRules": {
+              "type": "array",
+              "title": "Additional egress rules",
+              "form": true,
+              "description": "Additional egress rules for specific IPs or services"
+            }
+          }
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "title": "API authentication",
+      "form": true,
+      "description": "API request authentication middleware. PREFERRED: Use valueFromSecret (RECOMMENDED for production). ALTERNATIVE: Use value for direct value (NOT RECOMMENDED for production).",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable authentication",
+          "form": true,
+          "description": "Enable API request authentication",
+          "default": false
+        },
+        "keys": {
+          "type": "array",
+          "title": "API keys",
+          "form": true,
+          "description": "List of API keys for authentication. PREFERRED: Use valueFromSecret (RECOMMENDED). ALTERNATIVE: Use value for direct value (NOT RECOMMENDED for production).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "title": "Key name",
+                "description": "Environment variable name for the API key (e.g., OLLAMA_API_KEY)"
+              },
+              "value": {
+                "type": "string",
+                "title": "Key value (direct)",
+                "description": "Direct API key value (NOT RECOMMENDED for production - use valueFromSecret instead)"
+              },
+              "valueFromSecret": {
+                "type": "string",
+                "title": "Key from secret",
+                "description": "Reference to Kubernetes secret (RECOMMENDED for production). Format: secret-name:key-name"
+              },
+              "valueFromEnv": {
+                "type": "string",
+                "title": "Key from environment",
+                "description": "Reference to existing environment variable name"
+              }
+            },
+            "required": ["name"]
+          },
+          "default": []
+        }
+      }
+    }
+  }
+}

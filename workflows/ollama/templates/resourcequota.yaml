@@ -1,0 +1,29 @@
+{{- if .Values.resourceQuota.enabled }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "ollama.fullname" . }}-quota
+  labels:
+    {{- include "ollama.labels" . | nindent 4 }}
+spec:
+  hard:
+    {{- if .Values.resourceQuota.requests.gpu }}
+    "requests.nvidia.com/gpu": {{ .Values.resourceQuota.requests.gpu | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.limits.gpu }}
+    "limits.nvidia.com/gpu": {{ .Values.resourceQuota.limits.gpu | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.requests.cpu }}
+    requests.cpu: {{ .Values.resourceQuota.requests.cpu }}
+    {{- end }}
+    {{- if .Values.resourceQuota.requests.memory }}
+    requests.memory: {{ .Values.resourceQuota.requests.memory }}
+    {{- end }}
+    {{- if .Values.resourceQuota.limits.cpu }}
+    limits.cpu: {{ .Values.resourceQuota.limits.cpu }}
+    {{- end }}
+    {{- if .Values.resourceQuota.limits.memory }}
+    limits.memory: {{ .Values.resourceQuota.limits.memory }}
+    {{- end }}
+{{- end }}
+

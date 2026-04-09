@@ -1,0 +1,15 @@
+{{- /*
+ConfigMap: Helm-rendered derived-models manifest for the Ollama entrypoint.
+*/ -}}
+{{- $manifest := trim (include "ollama.derivedModelsManifestJSON" .) }}
+{{- if ne $manifest "[]" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ollama.fullname" . }}-chart-derived-models
+  labels:
+    {{- include "ollama.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chart-derived-models
+data:
+  derived-models.json: {{ $manifest | quote }}
+{{- end }}

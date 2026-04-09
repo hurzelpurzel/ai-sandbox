@@ -1,0 +1,163 @@
+{{- if .Values.warmup.enabled }}
+{{- $healthPath := .Values.healthChecks.readiness.path | default "/api/tags" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ollama.fullname" . }}-warmup-pre-hook
+  labels:
+    {{- include "ollama.labels" . | nindent 4 }}
+    app.kubernetes.io/component: warmup-pre-hook
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ add (.Values.warmup.deploymentReadyTimeout | default 600) (.Values.warmup.healthCheckTimeout | default 600) }}
+  template:
+    metadata:
+      labels:
+        {{- include "ollama.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: warmup-pre-hook
+    spec:
+      serviceAccountName: {{ include "ollama.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: wait-for-ready
+        image: {{ .Values.warmup.image.repository }}:{{ .Values.warmup.image.tag }}
+        imagePullPolicy: {{ .Values.warmup.image.pullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+            add: []
+          readOnlyRootFilesystem: true
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          DEPLOYMENT_NAME="{{ include "ollama.fullname" . }}"
+          SERVICE_PORT="{{ .Values.service.port }}"
+          NAMESPACE="{{ .Release.Namespace }}"
+          APP_NAME="{{ include "ollama.name" . }}"
+          RELEASE_NAME="{{ .Release.Name }}"
+          DEPLOYMENT_TIMEOUT="{{ .Values.warmup.deploymentReadyTimeout }}"
+          HEALTH_TIMEOUT="{{ .Values.warmup.healthCheckTimeout }}"
+          HEALTH_PATH={{ $healthPath | squote }}
+          
+          # Calculate number of iterations based on timeout (check every 2 seconds)
+          DEPLOYMENT_ITERATIONS=$((DEPLOYMENT_TIMEOUT / 2))
+          HEALTH_ITERATIONS=$((HEALTH_TIMEOUT / 2))
+          
+          # Discover service name dynamically using Kubernetes API
+          KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || echo "")
+          KUBE_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          KUBE_API="https://kubernetes.default.svc/api/v1/namespaces/${NAMESPACE}/services"
+          
+          echo "⏳ Pre-hook: Discovering OLLAMA service and waiting for pod to be healthy..."
+          echo "Looking for service with labels: app.kubernetes.io/name=${APP_NAME}, app.kubernetes.io/instance=${RELEASE_NAME}"
+          
+          SERVICE_NAME=""
+          if [ -n "${KUBE_TOKEN}" ] && [ -f "${KUBE_CA}" ]; then
+            # Try to find service by labels
+            SERVICE_LIST=$(curl -sf --cacert "${KUBE_CA}" \
+              -H "Authorization: Bearer ${KUBE_TOKEN}" \
+              "${KUBE_API}?labelSelector=app.kubernetes.io/name%3D${APP_NAME},app.kubernetes.io/instance%3D${RELEASE_NAME}" 2>&1)
+            
+            if [ $? -eq 0 ] && [ -n "${SERVICE_LIST}" ]; then
+              # Extract service name from the list (get first service name)
+              SERVICE_NAME=$(echo "${SERVICE_LIST}" | grep -o '"name":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [ -n "${SERVICE_NAME}" ]; then
+                echo "✅ Found service: ${SERVICE_NAME}"
+              fi
+            fi
+          fi
+          
+          # Fallback: Try the template-generated name (for backward compatibility)
+          if [ -z "${SERVICE_NAME}" ]; then
+            SERVICE_NAME="${DEPLOYMENT_NAME}"
+            echo "⚠️  Could not discover service via API, using fallback name: ${SERVICE_NAME}"
+          fi
+          
+          # Primary check: Wait for OLLAMA service health endpoint to respond
+          # This is the most reliable indicator that the pod is ready
+          echo "Checking Ollama readiness (GET ${HEALTH_PATH}, timeout: ${HEALTH_TIMEOUT}s)..."
+          echo "Service: ${SERVICE_NAME}, Port: ${SERVICE_PORT}, Namespace: ${NAMESPACE}"
+          HEALTH_READY=false
+          for i in $(seq 1 ${HEALTH_ITERATIONS}); do
+            # Try to connect and capture both stdout and stderr for debugging
+            CURL_OUTPUT=$(curl -sf --max-time 2 "http://${SERVICE_NAME}:${SERVICE_PORT}${HEALTH_PATH}" 2>&1)
+            CURL_EXIT=$?
+            if [ $CURL_EXIT -eq 0 ]; then
+              echo "✅ OLLAMA readiness endpoint is ready (${HEALTH_PATH})"
+              HEALTH_READY=true
+              break
+            fi
+            if [ $i -eq ${HEALTH_ITERATIONS} ]; then
+              echo "❌ ERROR: OLLAMA readiness (${HEALTH_PATH}) did not become ready within ${HEALTH_TIMEOUT} seconds"
+              echo "Last curl attempt failed with exit code: ${CURL_EXIT}"
+              echo "Last curl output: ${CURL_OUTPUT}"
+              echo "Attempting diagnostic checks..."
+              # Diagnostic: Check if service exists
+              echo "Checking if service ${SERVICE_NAME} exists..."
+              nslookup ${SERVICE_NAME} 2>&1 || echo "DNS lookup failed for ${SERVICE_NAME}"
+              # Diagnostic: Try to connect to service (without path)
+              echo "Testing basic connectivity to ${SERVICE_NAME}:${SERVICE_PORT}..."
+              timeout 2 nc -zv ${SERVICE_NAME} ${SERVICE_PORT} 2>&1 || echo "Connection test failed"
+              exit 1
+            fi
+            if [ $((i % 10)) -eq 0 ]; then
+              # Every 10 attempts, show diagnostic info
+              echo "Waiting for service health endpoint... ($i/${HEALTH_ITERATIONS})"
+              echo "  Last curl error: ${CURL_OUTPUT}"
+            else
+              echo "Waiting for service health endpoint... ($i/${HEALTH_ITERATIONS})"
+            fi
+            sleep 2
+          done
+          
+          # Secondary check: Verify deployment has ready replicas (optional, for additional confirmation)
+          # (KUBE_TOKEN and KUBE_CA already set above)
+          KUBE_DEPLOYMENT_API="https://kubernetes.default.svc/apis/apps/v1/namespaces/${NAMESPACE}/deployments/${DEPLOYMENT_NAME}"
+          
+          if [ "${HEALTH_READY}" = "true" ] && [ -n "${KUBE_TOKEN}" ] && [ -f "${KUBE_CA}" ]; then
+            echo "Verifying deployment status via Kubernetes API..."
+            DEPLOYMENT_RESPONSE=$(curl -sf --cacert "${KUBE_CA}" \
+              -H "Authorization: Bearer ${KUBE_TOKEN}" \
+              "${KUBE_DEPLOYMENT_API}" 2>&1)
+            
+            if [ $? -eq 0 ] && [ -n "${DEPLOYMENT_RESPONSE}" ]; then
+              READY_REPLICAS=$(echo "${DEPLOYMENT_RESPONSE}" | \
+                grep -o '"readyReplicas":[0-9]*' | \
+                grep -o '[0-9]*' || echo "0")
+              if [ "${READY_REPLICAS}" != "" ] && [ "${READY_REPLICAS}" != "0" ]; then
+                echo "✅ Deployment confirmed: ${READY_REPLICAS} ready replica(s)"
+              else
+                echo "⚠️  Health endpoint ready but deployment shows 0 ready replicas (may be transient)"
+              fi
+            else
+              echo "⚠️  Could not verify deployment status via API (health check passed)"
+            fi
+          fi
+          
+          echo "✅ Pre-hook completed: Pod is healthy and ready"
+          exit 0
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+{{- end }}
+

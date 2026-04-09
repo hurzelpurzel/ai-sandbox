@@ -1,0 +1,6 @@
+{{- if .Values.policies.opa.enabled }}
+{{- include "ollama.opa.constraintTemplate" . }}
+---
+{{- include "ollama.opa.constraint" . }}
+{{- end }}
+

@@ -1,0 +1,30 @@
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+Copyright 2025 Arktec Quant
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+---
+
+NOTICE: This license applies to the ollama Helm chart (the Kubernetes
+deployment configuration, templates, values files, and documentation) and
+the custom-built Ollama image (ghcr.io/arktec-quant/ollama).
+
+The OLLAMA inference engine and its codebase are developed and
+maintained by the OLLAMA project (https://github.com/ollama/ollama) and are
+licensed separately under MIT by the OLLAMA project contributors.
+
+See the NOTICE file for detailed attribution requirements.
+
